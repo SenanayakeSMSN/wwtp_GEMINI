@@ -2,9 +2,9 @@ import google.generativeai as genai
 from PIL import Image
 import os
 import streamlit as st
-import logging
 import time
 from google.api_core import exceptions
+import logging
 import re
 
 # Setup logging
@@ -54,7 +54,7 @@ Analyze the provided image to determine if it depicts a wastewater treatment pla
   - Number of rectangular features without water (light color).
 - If it is not a WWTP, provide a brief description and set all counts to 0.
 - Use the provided guidelines to ensure accurate identification and differentiation of features.
-- For all counts, provide only an integer value (e.g., 5, 10, 0). If exact counting is difficult due to resolution or overlapping features, estimate the number as an integer without additional text or qualifiers (e.g., use 20 instead of '20+' or '20 20 (approximate)').
+- For all counts, provide only an integer value (e.g., 5, 10, 0). If exact counting is difficult due to resolution or overlapping features, estimate the number as an integer without additional text or qualifiers (e.g., use 20 instead of '20+' or '20 (approximate)').
 
 *RESPONSE FORMAT:*
 - Is it a WWTP? [Yes/No]
@@ -67,7 +67,7 @@ Analyze the provided image to determine if it depicts a wastewater treatment pla
 - Rectangular Features without Water: [Number]
 """
 
-# Function to analyze the image
+# Function to process an image with retries and rate limiting
 def analyze_image(image_path, max_retries=3, rate_limit_delay=4):
     for attempt in range(max_retries):
         try:
@@ -113,12 +113,12 @@ def analyze_image(image_path, max_retries=3, rate_limit_delay=4):
             return {
                 "Is WWTP?": is_wwtp,
                 "Description": description,
-                "Circular Features": circular_count,
-                "Rectangular Features": rectangular_count,
-                "Circular Features with Water": circular_with_water,
-                "Circular Features without Water": circular_without_water,
-                "Rectangular Features with Water": rectangular_with_water,
-                "Rectangular Features without Water": rectangular_without_water
+                "Num of Circular Features": circular_count,
+                "Num of Rectangular Features": rectangular_count,
+                "Num of Circular Features with Water": circular_with_water,
+                "Num of Circular Features without Water": circular_without_water,
+                "Num of Rectangular Features with Water": rectangular_with_water,
+                "Num of Rectangular Features without Water": rectangular_without_water
             }
         except exceptions.ResourceExhausted as e:
             if attempt < max_retries - 1:
@@ -128,27 +128,39 @@ def analyze_image(image_path, max_retries=3, rate_limit_delay=4):
                 return {
                     "Is WWTP?": "N/A",
                     "Description": f"Error: {str(e)}",
-                    "Circular Features": 0,
-                    "Rectangular Features": 0,
-                    "Circular Features with Water": 0,
-                    "Circular Features without Water": 0,
-                    "Rectangular Features with Water": 0,
-                    "Rectangular Features without Water": 0
+                    "Num of Circular Features": 0,
+                    "Num of Rectangular Features": 0,
+                    "Num of Circular Features with Water": 0,
+                    "Num of Circular Features without Water": 0,
+                    "Num of Rectangular Features with Water": 0,
+                    "Num of Rectangular Features without Water": 0
                 }
+        except ValueError as e:
+            # Handle cases where integer parsing fails due to unexpected format
+            return {
+                "Is WWTP?": "N/A",
+                "Description": f"Error: Failed to parse response due to unexpected format - {str(e)}",
+                "Num of Circular Features": 0,
+                "Num of Rectangular Features": 0,
+                "Num of Circular Features with Water": 0,
+                "Num of Circular Features without Water": 0,
+                "Num of Rectangular Features with Water": 0,
+                "Num of Rectangular Features without Water": 0
+            }
         except Exception as e:
             if attempt == max_retries - 1:
                 return {
                     "Is WWTP?": "N/A",
                     "Description": f"Error: {str(e)}",
-                    "Circular Features": 0,
-                    "Rectangular Features": 0,
-                    "Circular Features with Water": 0,
-                    "Circular Features without Water": 0,
-                    "Rectangular Features with Water": 0,
-                    "Rectangular Features without Water": 0
+                    "Num of Circular Features": 0,
+                    "Num of Rectangular Features": 0,
+                    "Num of Circular Features with Water": 0,
+                    "Num of Circular Features without Water": 0,
+                    "Num of Rectangular Features with Water": 0,
+                    "Num of Rectangular Features without Water": 0
                 }
             time.sleep(2)
-    time.sleep(rate_limit_delay)
+    time.sleep(rate_limit_delay)  # Rate limit delay
 
 # Streamlit App
 def main():
@@ -180,14 +192,14 @@ def main():
                 st.write("### Analysis Results")
                 if result["Is WWTP?"] == "Yes":
                     st.write(f"**Description:** {result['Description']}")
-                    st.write(f"**Circular Features:** {result['Circular Features']}")
-                    st.write(f"**Rectangular Features:** {result['Rectangular Features']}")
-                    st.write(f"**Circular Features with Water:** {result['Circular Features with Water']}")
-                    st.write(f"**Circular Features without Water:** {result['Circular Features without Water']}")
-                    st.write(f"**Rectangular Features with Water:** {result['Rectangular Features with Water']}")
-                    st.write(f"**Rectangular Features without Water:** {result['Rectangular Features without Water']}")
+                    st.write(f"**Circular Features:** {result['Num of Circular Features']}")
+                    st.write(f"**Rectangular Features:** {result['Num of Rectangular Features']}")
+                    st.write(f"**Circular Features with Water:** {result['Num of Circular Features with Water']}")
+                    st.write(f"**Circular Features without Water:** {result['Num of Circular Features without Water']}")
+                    st.write(f"**Rectangular Features with Water:** {result['Num of Rectangular Features with Water']}")
+                    st.write(f"**Rectangular Features without Water:** {result['Num of Rectangular Features without Water']}")
                 elif result["Is WWTP?"] == "No":
-                    st.write(f"This is not a WWTP.")
+                    st.write("This is not a WWTP.")
                     st.write(f"**Description:** {result['Description']}")
                 else:
                     st.write(f"**Error:** {result['Description']}")
