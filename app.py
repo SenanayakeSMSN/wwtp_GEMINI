@@ -475,7 +475,6 @@ if __name__ == "__main__":
     root.mainloop()
     
 '''
-
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
@@ -518,6 +517,77 @@ Analyze the provided image to determine if it depicts a wastewater treatment pla
    - Clarifiers (Secondary Settling Tanks): Can be circular or rectangular, often downstream of aeration basins. Water may appear clearer than in PSTs. Circular clarifiers may have central mechanisms, potentially smaller than those in PSTs.
    - Sludge Drying Beds: Rectangular areas with clear divisions or rows. Look for drying sludge texture, changing from dark brown (wet) to lighter shades (dry). Often near settling tanks or clarifiers.
    - Inlet and Outlet Structures: Look for pipes, channels, or canalsA entering (from populated/industrial areas) and exiting (to a river, lake, or ocean). Pumping stations (small buildings) may be nearby.
+   - Digesters: Tall, cylindrical tanks with conical bottoms or dome-shaped tops, often near sludge handling areas. A strong indicator if present.
+   - Buildings: Administrative, laboratory, or equipment buildings. Support identification but are not definitive alone.
+
+1.C. OVERALL LAYOUT AND INTERCONNECTEDNESS:
+   - A functioning WWTP has a logical flow, e.g., Inlet -> PSTs -> Aeration Basins -> Clarifiers -> Outlet. Sludge handling (drying beds, digesters) is typically near PSTs and clarifiers. This spatial coherence strongly supports identification.
+
+*INSTRUCTIONS:*
+- If the image depicts a WWTP, provide a brief description of the scene and count the following:
+  - Number of circular features (e.g., tanks, clarifiers).
+  - Number of rectangular features (e.g., buildings, basins).
+  - Number of circular features with water (dark color).
+  - Number of circular features without water (light color).
+  - Number of rectangular features with water (dark color).
+  - Number of rectangular features without water (light color).
+- If it is not a WWTP, provide a brief description and set all counts to 0.
+- Use the provided guidelines to ensure accurate identification and differentiation of features.
+- For all counts, provide only an integer value (e.g., 5, 10, 0). If exact counting is difficult due to resolution or overlapping features, estimate the number as an integer without additional text or qualifiers (e.g., use 20 instead of '20+' or '20 (approximate)').
+
+*RESPONSE FORMAT:*
+- Is it a WWTP? [Yes/No]
+- Description: [Brief description]
+- Circular Features: [Number]
+- Rectangular Features: [Number]
+- Circular Features with Water: [Number]
+- Circular Features without Water: [Number]
+- Rectangular Features with Water: [Number]
+- Rectangular Features without Water: [Number]
+"""
+
+import streamlit as st
+import google.generativeai as genai
+from PIL import Image
+import os
+import pandas as pd
+from datetime import datetime
+import time
+from google.api_core import exceptions
+import logging
+import re
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# API keys
+API_KEYS = [
+    "AIzaSyCjDmZD-dCcRuCfjIKLwufOTgHxaCFZgdo",
+    "AIzaSyCe-JWBbgReQulpm7TYh8_fqi-37vwvLu8"
+]
+API_KEY = API_KEYS[0]
+genai.configure(api_key=API_KEY)
+
+# Initialize the Gemini model
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Updated prompt with stricter instructions
+prompt = """
+Analyze the provided image to determine if it depicts a wastewater treatment plant (WWTP). A WWTP is a system of interconnected units, not just isolated tanks. Use the following detailed guidelines to identify WWTP components and their arrangement, as their presence and logical layout are key to a positive identification:
+
+*IDENTIFY WASTEWATER TREATMENT PLANT (WWTP) COMPONENTS:*
+
+1.A. TANKS (Detailed Identification Rules):
+   - Circular Tanks: Round structures made of concrete, steel, or other materials. Sizes vary greatly. Some may have covers or domes (appearing as solid circles), and some may have central mechanisms (e.g., rotating scraper arms). Count those with water (dark color) and without water (light color) separately.
+   - Rectangular Tanks: Elongated basins, often with a length-to-width ratio of 3:1 to 5:1. They may appear singly, in groups, or in parallel series, sometimes with internal dividers or walls. Corners may not always be sharp. Count those with water (dark color) and without water (light color) separately.
+   - Primary Sedimentation Tanks (PSTs): Predominantly circular and among the larger circular tanks. Look for a central mechanism (rotating scraper arm) and a darker central sludge hopper. Rectangular PSTs are less common but may have a longitudinal collector mechanism.
+
+1.B. OTHER KEY WWTP INFRASTRUCTURE (Beyond Tanks):
+   - Aeration Basins: Typically large rectangular basins, though circular or oval shapes are possible. Look for surface agitation (ripples, waves), visible aerators, or bubble patterns. Water may appear brownish due to microbial activity.
+   - Clarifiers (Secondary Settling Tanks): Can be circular or rectangular, often downstream of aeration basins. Water may appear clearer than in PSTs. Circular clarifiers may have central mechanisms, potentially smaller than those in PSTs.
+   - Sludge Drying Beds: Rectangular areas with clear divisions or rows. Look for drying sludge texture, changing from dark brown (wet) to lighter shades (dry). Often near settling tanks or clarifiers.
+   - Inlet and Outlet Structures: Look for pipes, channels, or canals entering (from populated/industrial areas) and exiting (to a river, lake, or ocean). Pumping stations (small buildings) may be nearby.
    - Digesters: Tall, cylindrical tanks with conical bottoms or dome-shaped tops, often near sludge handling areas. A strong indicator if present.
    - Buildings: Administrative, laboratory, or equipment buildings. Support identification but are not definitive alone.
 
@@ -675,8 +745,8 @@ def main():
     if 'analyzed' not in st.session_state:
         st.session_state.analyzed = False
 
-    # Sidebar for image upload and analysis
-    st.sidebar.header("Upload and Analyze Image")
+    # Sidebar for image upload
+    st.sidebar.header("Upload Image")
     uploaded_file = st.sidebar.file_uploader("Choose an image...", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
     if uploaded_file is not None:
@@ -687,15 +757,17 @@ def main():
             st.session_state.chat_history.append({"sender": "System", "message": f"Image uploaded: {uploaded_file.name}"})
             st.session_state.analyzed = False  # Reset analyzed state for new image
 
-        # Display uploaded image
+    # Display uploaded image
+    if st.session_state.image:
         st.image(st.session_state.image, caption="Uploaded Image", use_column_width=True)
 
-        # Analyze button
-        if st.sidebar.button("Analyze"):
+    # Analyze button in main area
+    if st.session_state.image and not st.session_state.analyzed:
+        if st.button("Analyze"):
             with st.spinner("Analyzing image for WWTP..."):
                 result = analyze_image(st.session_state.image, initial=True)
                 st.session_state.chat_history.append({"sender": "Gemini", "message": result["Text"]})
-                result["Image Name"] = uploaded_file.name
+                result["Image Name"] = st.session_state.image_name
                 st.session_state.results.append(result)
                 st.session_state.analyzed = True
             st.rerun()
@@ -719,7 +791,7 @@ def main():
     elif st.session_state.image and not st.session_state.analyzed:
         st.info("Please click 'Analyze' to process the image before asking questions.")
     else:
-        st.info("Please upload an image and analyze it first.")
+        st.info("Please upload an image first.")
 
     # Save results
     if st.button("Save Results"):
