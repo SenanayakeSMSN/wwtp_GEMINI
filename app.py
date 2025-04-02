@@ -517,7 +517,7 @@ Analyze the provided image to determine if it depicts a wastewater treatment pla
    - Aeration Basins: Typically large rectangular basins, though circular or oval shapes are possible. Look for surface agitation (ripples, waves), visible aerators, or bubble patterns. Water may appear brownish due to microbial activity.
    - Clarifiers (Secondary Settling Tanks): Can be circular or rectangular, often downstream of aeration basins. Water may appear clearer than in PSTs. Circular clarifiers may have central mechanisms, potentially smaller than those in PSTs.
    - Sludge Drying Beds: Rectangular areas with clear divisions or rows. Look for drying sludge texture, changing from dark brown (wet) to lighter shades (dry). Often near settling tanks or clarifiers.
-   - Inlet and Outlet Structures: Look for pipes, channels, or canals entering (from populated/industrial areas) and exiting (to a river, lake, or ocean). Pumping stations (small buildings) may be nearby.
+   - Inlet and Outlet Structures: Look for pipes, channels, or canalsA entering (from populated/industrial areas) and exiting (to a river, lake, or ocean). Pumping stations (small buildings) may be nearby.
    - Digesters: Tall, cylindrical tanks with conical bottoms or dome-shaped tops, often near sludge handling areas. A strong indicator if present.
    - Buildings: Administrative, laboratory, or equipment buildings. Support identification but are not definitive alone.
 
@@ -672,26 +672,33 @@ def main():
         st.session_state.image = None
     if 'image_name' not in st.session_state:
         st.session_state.image_name = None
+    if 'analyzed' not in st.session_state:
+        st.session_state.analyzed = False
 
-    # Sidebar for image upload
-    st.sidebar.header("Upload Image")
+    # Sidebar for image upload and analysis
+    st.sidebar.header("Upload and Analyze Image")
     uploaded_file = st.sidebar.file_uploader("Choose an image...", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
-    if uploaded_file is not None and uploaded_file != st.session_state.image:
-        st.session_state.image = Image.open(uploaded_file)
-        st.session_state.image_name = uploaded_file.name
-        st.session_state.chat_history.append({"sender": "System", "message": f"Image uploaded: {uploaded_file.name}"})
-        
-        # Perform initial WWTP analysis
-        with st.spinner("Analyzing image for WWTP..."):
-            result = analyze_image(st.session_state.image, initial=True)
-            st.session_state.chat_history.append({"sender": "Gemini", "message": result["Text"]})
-            result["Image Name"] = uploaded_file.name
-            st.session_state.results.append(result)
+    if uploaded_file is not None:
+        # Only update image if it's a new upload
+        if st.session_state.image_name != uploaded_file.name:
+            st.session_state.image = Image.open(uploaded_file)
+            st.session_state.image_name = uploaded_file.name
+            st.session_state.chat_history.append({"sender": "System", "message": f"Image uploaded: {uploaded_file.name}"})
+            st.session_state.analyzed = False  # Reset analyzed state for new image
 
-    # Display uploaded image
-    if st.session_state.image:
+        # Display uploaded image
         st.image(st.session_state.image, caption="Uploaded Image", use_column_width=True)
+
+        # Analyze button
+        if st.sidebar.button("Analyze"):
+            with st.spinner("Analyzing image for WWTP..."):
+                result = analyze_image(st.session_state.image, initial=True)
+                st.session_state.chat_history.append({"sender": "Gemini", "message": result["Text"]})
+                result["Image Name"] = uploaded_file.name
+                st.session_state.results.append(result)
+                st.session_state.analyzed = True
+            st.rerun()
 
     # Chat interface
     st.header("Chat")
@@ -700,18 +707,19 @@ def main():
         for chat in st.session_state.chat_history:
             st.write(f"**{chat['sender']}:** {chat['message']}")
 
-    # Input for questions
-    question = st.text_input("Ask a question about the image:", key="question_input")
-    if st.button("Send") and question:
-        if not st.session_state.image:
-            st.session_state.chat_history.append({"sender": "Gemini", "message": "Please upload an image first before asking questions!"})
-        else:
+    # Input for questions (only enabled after analysis)
+    if st.session_state.image and st.session_state.analyzed:
+        question = st.text_input("Ask a question about the image:", key="question_input")
+        if st.button("Send") and question:
             with st.spinner("Processing your question..."):
                 st.session_state.chat_history.append({"sender": "You", "message": question})
                 result = analyze_image(st.session_state.image, question=question)
                 st.session_state.chat_history.append({"sender": "Gemini", "message": result["Text"]})
-        # Refresh chat display
-        st.rerun()
+            st.rerun()
+    elif st.session_state.image and not st.session_state.analyzed:
+        st.info("Please click 'Analyze' to process the image before asking questions.")
+    else:
+        st.info("Please upload an image and analyze it first.")
 
     # Save results
     if st.button("Save Results"):
@@ -723,7 +731,6 @@ def main():
             df.to_excel(output_file, index=False)
             st.session_state.chat_history.append({"sender": "System", "message": f"Results saved to {output_file}"})
             st.success(f"Results saved to {output_file}")
-            # Provide download link
             with open(output_file, "rb") as file:
                 st.download_button(
                     label="Download Results",
