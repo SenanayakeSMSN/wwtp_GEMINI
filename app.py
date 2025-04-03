@@ -3556,7 +3556,7 @@ with col1:
                     st.error("Failed to analyze image.")
 
 with col2:
-    st.write("### Multiple Images (Folder)")
+    st.write("### Multiple Images")
     uploaded_files = st.file_uploader("Choose multiple images", type=["jpg", "png", "jpeg", "tif", "tiff"], accept_multiple_files=True, key="multiple")
     if uploaded_files:
         st.session_state.uploaded_files = uploaded_files
@@ -3576,7 +3576,7 @@ for sender, message in st.session_state.chat_history:
     with st.chat_message(sender.lower()):
         st.write(message)
 
-if prompt := st.chat_input("Ask a question or type a command"):
+if prompt := st.chat_input("Ask a question"):
     st.session_state.chat_history.append(("You", prompt))
     with st.chat_message("you"):
         st.write(prompt)
