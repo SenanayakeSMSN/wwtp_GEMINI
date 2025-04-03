@@ -2938,10 +2938,8 @@ if __name__ == "__main__":
     app = WWTPChatbotApp(root)
     root.mainloop()
     
-'''
-
 #Streamlit
-'''
+
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
