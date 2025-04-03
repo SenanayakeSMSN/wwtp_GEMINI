@@ -2500,7 +2500,7 @@ if __name__ == "__main__":
     app = WWTPChatbotApp(root)
     root.mainloop()
     
-'''
+
 import google.generativeai as genai
 from PIL import Image
 import os
@@ -2937,3 +2937,294 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = WWTPChatbotApp(root)
     root.mainloop()
+    
+'''
+
+#Streamlit
+import streamlit as st
+import google.generativeai as genai
+from PIL import Image
+import io
+import os
+from datetime import datetime
+import time
+from google.api_core import exceptions
+import logging
+import re
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# API keys
+API_KEYS = [
+    "AIzaSyCjDmZD-dCcRuCfjIKLwufOTgHxaCFZgdo",
+    "AIzaSyCe-JWBbgReQulpm7TYh8_fqi-37vwvLu8"
+]
+API_KEY = API_KEYS[0]
+genai.configure(api_key=API_KEY)
+
+# Initialize the Gemini model
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Prompt for initial WWTP analysis
+image_prompt = """
+Analyze the provided image to determine if it depicts a wastewater treatment plant (WWTP). A WWTP is a system of interconnected units, not just isolated tanks. Use the following detailed guidelines to identify WWTP components and their arrangement, as their presence and logical layout are key to a positive identification:
+
+*IDENTIFY WASTEWATER TREATMENT PLANT (WWTP) COMPONENTS:*
+
+1.A. TANKS (Detailed Identification Rules):
+   - Circular Tanks: Round structures made of concrete, steel, or other materials. Sizes vary greatly. Some may have covers or domes (appearing as solid circles), and some may have central mechanisms (e.g., rotating scraper arms). Count those with water (dark color) and without water (light color) separately.
+   - Rectangular Tanks: Elongated basins, often with a length-to-width ratio of 3:1 to 5:1. They may appear singly, in groups, or in parallel series, sometimes with internal dividers or walls. Corners may not always be sharp. Count those with water (dark color) and without water (light color) separately.
+   - Primary Sedimentation Tanks (PSTs): Predominantly circular and among the larger circular tanks. Look for a central mechanism (rotating scraper arm) and a darker central sludge hopper. Rectangular PSTs are less common but may have a longitudinal collector mechanism.
+
+1.B. OTHER KEY WWTP INFRASTRUCTURE (Beyond Tanks):
+   - Aeration Basins: Typically large rectangular basins, though circular or oval shapes are possible. Look for surface agitation (ripples, waves), visible aerators, or bubble patterns. Water may appear brownish due to microbial activity.
+   - Clarifiers (Secondary Settling Tanks): Can be circular or rectangular, often downstream of aeration basins. Water may appear clearer than in PSTs. Circular clarifiers may have central mechanisms, potentially smaller than those in PSTs.
+   - Sludge Drying Beds: Rectangular areas with clear divisions or rows. Look for drying sludge texture, changing from dark brown (wet) to lighter shades (dry). Often near settling tanks or clarifiers.
+   - Inlet and Outlet Structures: Look for pipes, channels, or canals entering (from populated/industrial areas) and exiting (to a river, lake, or ocean). Pumping stations (small buildings) may be nearby.
+   - Digesters: Tall, cylindrical tanks with conical bottoms or dome-shaped tops, often near sludge handling areas. A strong indicator if present.
+   - Buildings: Administrative, laboratory, or equipment buildings. Support identification but are not definitive alone.
+
+1.C. OVERALL LAYOUT AND INTERCONNECTEDNESS:
+   - A functioning WWTP has a logical flow, e.g., Inlet -> PSTs -> Aeration Basins -> Clarifiers -> Outlet. Sludge handling (drying beds, digesters) is typically near PSTs and clarifiers. This spatial coherence strongly supports identification.
+
+*INSTRUCTIONS:*
+- If the image depicts a WWTP, provide a brief description of the scene and count the following:
+  - Number of circular features (e.g., tanks, clarifiers).
+  - Number of rectangular features (e.g., buildings, basins).
+  - Number of circular features with water (dark color).
+  - Number of circular features without water (light color).
+  - Number of rectangular features with water (dark color).
+  - Number of rectangular features without water (light color).
+- If it is not a WWTP, provide a brief description and set all counts to 0.
+- Use the provided guidelines to ensure accurate identification and differentiation of features.
+- For all counts, provide only an integer value (e.g., 5, 10, 0). If exact counting is difficult due to resolution or overlapping features, estimate the number as an integer without additional text or qualifiers (e.g., use 20 instead of '20+' or '20 (approximate)').
+
+*RESPONSE FORMAT:*
+- Is it a WWTP? [Yes/No]
+- Description: [Brief description]
+- Circular Features: [Number]
+- Rectangular Features: [Number]
+- Circular Features with Water: [Number]
+- Circular Features without Water: [Number]
+- Rectangular Features with Water: [Number]
+- Rectangular Features without Water: [Number]
+"""
+
+# Initialize session state
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'last_analyzed_image' not in st.session_state:
+    st.session_state.last_analyzed_image = None
+if 'last_analyzed_image_path' not in st.session_state:
+    st.session_state.last_analyzed_image_path = None
+if 'last_analysis_result' not in st.session_state:
+    st.session_state.last_analysis_result = None
+
+def analyze_image(image, image_path, max_retries=3, rate_limit_delay=4):
+    for attempt in range(max_retries):
+        try:
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            response = model.generate_content([image_prompt, image])
+            result_text = response.text.strip()
+            
+            lines = result_text.split('\n')
+            is_wwtp = "Yes" if "Is it a WWTP? Yes" in lines[0] else "No"
+            description = "N/A"
+            circular_count = 0
+            rectangular_count = 0
+            circular_with_water = 0
+            circular_without_water = 0
+            rectangular_with_water = 0
+            rectangular_without_water = 0
+            
+            def extract_number(text):
+                match = re.search(r'\d+', text)
+                return int(match.group()) if match else 0
+
+            for line in lines:
+                if "Description:" in line:
+                    description = line.split('Description:')[1].strip()
+                elif "Circular Features:" in line and "with Water" not in line and "without Water" not in line:
+                    circular_count = extract_number(line.split(':')[1].strip())
+                elif "Rectangular Features:" in line and "with Water" not in line and "without Water" not in line:
+                    rectangular_count = extract_number(line.split(':')[1].strip())
+                elif "Circular Features with Water:" in line:
+                    circular_with_water = extract_number(line.split(':')[1].strip())
+                elif "Circular Features without Water:" in line:
+                    circular_without_water = extract_number(line.split(':')[1].strip())
+                elif "Rectangular Features with Water:" in line:
+                    rectangular_with_water = extract_number(line.split(':')[1].strip())
+                elif "Rectangular Features without Water:" in line:
+                    rectangular_without_water = extract_number(line.split(':')[1].strip())
+            
+            image_name = os.path.basename(image_path) if image_path else "Uploaded Image"
+            result_dict = {
+                "Image Name": image_name,
+                "Is WWTP?": is_wwtp,
+                "Num of Circular Features": circular_count,
+                "Num of Rectangular Features": rectangular_count,
+                "Num of Circular Features with Water": circular_with_water,
+                "Num of Circular Features without Water": circular_without_water,
+                "Num of Rectangular Features with Water": rectangular_with_water,
+                "Num of Rectangular Features without Water": rectangular_without_water,
+                "Description": description,
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Raw Text": result_text
+            }
+            
+            st.session_state.last_analyzed_image = image
+            st.session_state.last_analyzed_image_path = image_path if image_path else "Uploaded Image"
+            st.session_state.last_analysis_result = result_dict
+            
+            message = f"Analysis of {image_name}:\n" \
+                     f"Is it a WWTP? {is_wwtp}\n" \
+                     f"Number of Circular Features: {circular_count}\n" \
+                     f"Number of Rectangular Features: {rectangular_count}\n" \
+                     f"Description: {description}\n"
+            st.session_state.chat_history.append(("Bot", message))
+            return True
+        except exceptions.ResourceExhausted as e:
+            if attempt < max_retries - 1:
+                st.session_state.chat_history.append(("Bot", f"429 error, retrying in 10 seconds..."))
+                time.sleep(10)
+            else:
+                handle_error(image_path, str(e))
+                return False
+        except Exception as e:
+            if attempt == max_retries - 1:
+                handle_error(image_path, str(e))
+                return False
+            time.sleep(2)
+    time.sleep(rate_limit_delay)
+    return True
+
+def handle_error(image_path, error_msg):
+    image_name = os.path.basename(image_path) if image_path else "Uploaded Image"
+    result_dict = {
+        "Image Name": image_name,
+        "Is WWTP?": "N/A",
+        "Num of Circular Features": 0,
+        "Num of Rectangular Features": 0,
+        "Num of Circular Features with Water": 0,
+        "Num of Circular Features without Water": 0,
+        "Num of Rectangular Features with Water": 0,
+        "Num of Rectangular Features without Water": 0,
+        "Description": f"Error: {error_msg}",
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Raw Text": f"Failed processing {image_path}: {error_msg}"
+    }
+    st.session_state.last_analyzed_image = None
+    st.session_state.last_analyzed_image_path = image_path if image_path else "Uploaded Image"
+    st.session_state.last_analysis_result = result_dict
+    
+    message = f"Analysis of {image_name}:\n" \
+             f"Is it a WWTP? N/A\n" \
+             f"Number of Circular Features: 0\n" \
+             f"Number of Rectangular Features: 0\n" \
+             f"Description: Error: {error_msg}\n"
+    st.session_state.chat_history.append(("Bot", message))
+
+def retrieve_relevant_history(user_input):
+    keywords = user_input.lower().split()
+    relevant_history = []
+    
+    for sender, message in reversed(st.session_state.chat_history[-20:]):
+        if any(keyword in message.lower() for keyword in keywords):
+            relevant_history.append(f"{sender}: {message}")
+    
+    return "\n".join(reversed(relevant_history)) if relevant_history else "No relevant history found."
+
+def handle_chat_response(user_input):
+    lower_input = user_input.lower()
+    
+    # Handle commands
+    if lower_input in ["clear"]:
+        st.session_state.chat_history = []
+        st.session_state.chat_history.append(("Bot", "Chat cleared"))
+        return
+    elif lower_input == "history":
+        history = "\n".join(f"{sender}: {msg}" for sender, msg in st.session_state.chat_history[-10:])
+        st.session_state.chat_history.append(("Bot", f"Recent chat history:\n{history}"))
+        return
+    elif lower_input == "help":
+        message = "Available commands:\n" \
+                 "- clear: Clear chat\n" \
+                 "- history: Show recent chat history\n" \
+                 "- help: Show this message\n" \
+                 "- Questions about last image: Ask anything about the image content (e.g., features, objects, details)\n" \
+                 "- General questions: I'll answer using chat history context"
+        st.session_state.chat_history.append(("Bot", message))
+        return
+
+    # Handle image-related questions if an image exists
+    if st.session_state.last_analyzed_image_path and st.session_state.last_analysis_result:
+        if "circular" in lower_input and ("how many" in lower_input or "count" in lower_input or "number" in lower_input):
+            count = st.session_state.last_analysis_result["Num of Circular Features"]
+            message = f"The last analyzed image ({st.session_state.last_analysis_result['Image Name']}) has {count} circular features."
+            st.session_state.chat_history.append(("Bot", message))
+            return
+
+        if "rectangular" in lower_input and ("how many" in lower_input or "count" in lower_input or "number" in lower_input):
+            count = st.session_state.last_analysis_result["Num of Rectangular Features"]
+            message = f"The last analyzed image ({st.session_state.last_analysis_result['Image Name']}) has {count} rectangular features."
+            st.session_state.chat_history.append(("Bot", message))
+            return
+
+        # Any other question about the image
+        if st.session_state.last_analyzed_image:
+            try:
+                custom_prompt = f"Analyze the image and answer the following question: {user_input}\nProvide a clear answer (yes/no if applicable) and a brief explanation.\n\nImage: {st.session_state.last_analyzed_image_path}"
+                response = model.generate_content([custom_prompt, st.session_state.last_analyzed_image])
+                st.session_state.chat_history.append(("Bot", response.text))
+            except Exception as e:
+                st.session_state.chat_history.append(("Bot", f"Sorry, I encountered an error while re-analyzing the image: {str(e)}"))
+            return
+        else:
+            st.session_state.chat_history.append(("Bot", "No image available to analyze. Please upload an image first."))
+            return
+
+    # Handle general questions
+    try:
+        relevant_history = retrieve_relevant_history(user_input)
+        context = f"Chat History:\n{relevant_history}\n\nQuestion: {user_input}"
+        response = model.generate_content(context)
+        st.session_state.chat_history.append(("Bot", response.text))
+    except Exception as e:
+        st.session_state.chat_history.append(("Bot", f"Sorry, I encountered an error: {str(e)}"))
+
+# Streamlit App Layout
+st.title("WWTP Analysis Chatbot")
+
+# Image Upload Section
+st.subheader("Upload an Image")
+uploaded_file = st.file_uploader("Choose an image file", type=["jpg", "png", "jpeg", "tif", "tiff"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Image", use_column_width=True)
+    if st.button("Analyze Image"):
+        with st.spinner("Analyzing image..."):
+            success = analyze_image(image, uploaded_file.name)
+            if success:
+                st.success("Image analyzed successfully!")
+            else:
+                st.error("Failed to analyze image.")
+
+# Chat Interface
+st.subheader("Chat with the Bot")
+for sender, message in st.session_state.chat_history:
+    with st.chat_message(sender.lower()):
+        st.write(message)
+
+if prompt := st.chat_input("Ask a question or type a command"):
+    st.session_state.chat_history.append(("You", prompt))
+    with st.chat_message("you"):
+        st.write(prompt)
+    with st.chat_message("bot"):
+        handle_chat_response(prompt)
+        st.write(st.session_state.chat_history[-1][1])  # Display the latest bot response
+    
